@@ -1,6 +1,7 @@
 import torch
-from torch import nn, einsum
+from torch import nn
 from einops import rearrange
+from opt_einsum import contract as einsum
 
 # helpers functions
 
@@ -71,18 +72,18 @@ class LambdaLayer(nn.Module):
 
         k = k.softmax(dim=-1)
 
-        λc = einsum('b u k m, b u v m -> b k v', k, v)
-        Yc = einsum('b h k n, b k v -> b h v n', q, λc)
+        λc = einsum('b u k m, b u v m -> b k v', k, v, backend='torch')
+        Yc = einsum('b h k n, b k v -> b h v n', q, λc, backend='torch')
 
         if self.local_contexts:
             v = rearrange(v, 'b u v (hh ww) -> b u v hh ww', hh = hh, ww = ww)
             λp = self.pos_conv(v)
-            Yp = einsum('b h k n, b k v n -> b h v n', q, λp.flatten(3))
+            Yp = einsum('b h k n, b k v n -> b h v n', q, λp.flatten(3), backend='torch')
         else:
             n, m = self.rel_pos.unbind(dim = -1)
             rel_pos_emb = self.rel_pos_emb[n, m]
-            λp = einsum('n m k u, b u v m -> b n k v', rel_pos_emb, v)
-            Yp = einsum('b h k n, b n k v -> b h v n', q, λp)
+            λp = einsum('n m k u, b u v m -> b n k v', rel_pos_emb, v, backend='torch')
+            Yp = einsum('b h k n, b n k v -> b h v n', q, λp, backend='torch')
 
         Y = Yc + Yp
         out = rearrange(Y, 'b h v (hh ww) -> b (h v) hh ww', hh = hh, ww = ww)
